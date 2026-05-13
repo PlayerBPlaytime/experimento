@@ -12,10 +12,6 @@ HOP_LENGTH = 512
 
 
 class SeminarDataset(Dataset):
-    """
-    Dataset de pares LQ/HQ para entrenamiento.
-    """
-
     def __init__(
         self,
         lq_dir,
@@ -36,21 +32,18 @@ class SeminarDataset(Dataset):
             self.pairs.append((str(lq), str(hq)))
 
         if len(self.pairs) == 0:
-            raise ValueError(f"No se encontraron pares en {lq_dir} / {hq_dir}")
+            raise ValueError(
+                f"No se encontraron pares en {lq_dir} / {hq_dir}"
+            )
 
-        print(f"📂 Dataset: {len(self.pairs)} pares")
+        print(f"📂 Dataset: {len(self.pairs)} pares encontrados")
 
     def load_audio(self, path):
         wav, sr = torchaudio.load(path)
-
-        # Mono
         if wav.shape[0] > 1:
             wav = wav.mean(0, keepdim=True)
-
-        # Resample
         if sr != self.sr:
             wav = T.Resample(sr, self.sr)(wav)
-
         return wav.squeeze(0)
 
     def to_spec(self, wav):
@@ -66,7 +59,6 @@ class SeminarDataset(Dataset):
 
     def random_crop(self, lq, hq):
         min_len = min(len(lq), len(hq))
-
         if min_len > self.segment_len:
             start = np.random.randint(0, min_len - self.segment_len)
             lq = lq[start:start + self.segment_len]
@@ -75,24 +67,16 @@ class SeminarDataset(Dataset):
             pad = self.segment_len - min_len
             lq = F.pad(lq, (0, pad))
             hq = F.pad(hq, (0, pad))
-
         return lq, hq
 
     def augment_audio(self, wav):
-        """Augmentaciones para más variedad"""
-
-        # Cambio de volumen aleatorio
         gain = np.random.uniform(0.7, 1.0)
         wav = wav * gain
-
-        # Flip de polaridad (50% de probabilidad)
         if np.random.random() < 0.5:
             wav = -wav
-
         return wav
 
     def __len__(self):
-        # Repetir el dataset para más steps por epoch
         return len(self.pairs) * 20
 
     def __getitem__(self, idx):
@@ -101,18 +85,14 @@ class SeminarDataset(Dataset):
         lq = self.load_audio(lq_path)
         hq = self.load_audio(hq_path)
 
-        # Crop aleatorio
         lq, hq = self.random_crop(lq, hq)
 
-        # Augmentación solo en HQ para no afectar el LQ
         if self.augment:
             hq = self.augment_audio(hq)
 
-        # Normalizar
         lq = lq / (lq.abs().max() + 1e-8)
         hq = hq / (hq.abs().max() + 1e-8)
 
-        # Espectrogramas
         lq_spec = self.to_spec(lq).unsqueeze(0)
         hq_spec = self.to_spec(hq).unsqueeze(0)
 
