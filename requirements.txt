@@ -1,0 +1,9 @@
+torch
+torchaudio
+gradio
+numpy
+scipy
+pedalboard
+soundfile
+librosa
+pathlib
