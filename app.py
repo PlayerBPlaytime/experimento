@@ -25,30 +25,28 @@ print(f"🔥 GPUs: {torch.cuda.device_count()}")
 model = get_model(DEVICE)
 
 
-def fn_descargar_hf(hf_repo, hf_filename, hf_token, progress=gr.Progress()):
+def fn_descargar_hf(hf_url, hf_token, progress=gr.Progress()):
     """
-    Descarga el ZIP desde Hugging Face y lo extrae.
-    hf_repo: "tu_usuario/dataset-seminario"
-    hf_filename: "dataset.zip"
-    hf_token: tu token de HF (solo si el dataset es privado)
+    Descarga el ZIP usando el link directo de HuggingFace.
     """
 
-    if not hf_repo or not hf_filename:
-        return "❌ Rellena el repo y el nombre del archivo"
+    if not hf_url or hf_url.strip() == "":
+        return "❌ Pon el link completo de HuggingFace"
 
-    progress(0, desc="⬇️ Conectando con Hugging Face...")
+    progress(0, desc="⬇️ Conectando con HuggingFace...")
 
     try:
-        token = hf_token if hf_token.strip() != "" else None
+        token = hf_token.strip() if hf_token.strip() != "" else None
+
+        progress(0.1, desc="⬇️ Descargando... (puede tardar varios minutos)")
 
         zip_path = descargar_desde_hf(
-            repo_id=hf_repo.strip(),
-            filename=hf_filename.strip(),
+            url=hf_url.strip(),
             local_path="/kaggle/working/hf_download",
             token=token
         )
 
-        progress(0.5, desc="📦 Extrayendo ZIP...")
+        progress(0.7, desc="📦 Extrayendo ZIP...")
 
         lq_dir, hq_dir = extraer_zip(
             zip_path,
@@ -66,13 +64,11 @@ def fn_descargar_hf(hf_repo, hf_filename, hf_token, progress=gr.Progress()):
 ✅ DATASET DESCARGADO Y LISTO
 
 📊 Info:
-   • Repo: {hf_repo}
-   • Archivo: {hf_filename}
    • Pares encontrados: {n_pares}
    • LQ: {lq_dir}
    • HQ: {hq_dir}
 
-🎯 Ahora ve al tab "Entrenar" y pulsa el botón.
+🎯 Ahora ve al tab Entrenar y pulsa el botón.
    No necesitas subir ningún ZIP.
 """
 
@@ -83,7 +79,6 @@ def fn_descargar_hf(hf_repo, hf_filename, hf_token, progress=gr.Progress()):
 def fn_entrenar(zip_file, progress=gr.Progress()):
     global model
 
-    # Primero verificar si ya hay dataset descargado desde HF
     lq_preload = os.path.join(DATASET_PATH, "lq")
     hq_preload = os.path.join(DATASET_PATH, "hq")
 
@@ -100,7 +95,7 @@ def fn_entrenar(zip_file, progress=gr.Progress()):
         return (
             "❌ No hay dataset.\n"
             "Opciones:\n"
-            "1. Descarga desde HuggingFace en el tab '⬇️ Descargar Dataset'\n"
+            "1. Descarga desde HuggingFace en el tab ⬇️ Descargar Dataset\n"
             "2. Sube un ZIP aquí"
         )
 
@@ -232,30 +227,26 @@ with gr.Blocks(
     with gr.Tab("⬇️ Descargar Dataset"):
         gr.Markdown("""
         ### Descarga tu dataset desde Hugging Face
-        
-        Sube tu ZIP a un dataset de HuggingFace y ponlo aquí.
-        Así no importa el tamaño del archivo ni tu wifi.
-        
-        **Cómo subir a HuggingFace:**
+
+        Pega el link directo de tu archivo ZIP.
+
+        **Cómo conseguir el link:**
         ```
-        1. Ve a huggingface.co
-        2. Tu perfil → New Dataset
-        3. Sube tu ZIP
-        4. Copia el nombre del repo (usuario/nombre-dataset)
+        1. Ve a tu dataset en HuggingFace
+        2. Click en el archivo ZIP
+        3. Click derecho en "Download"
+        4. Copiar link
         ```
+        El link se ve así:
+        `https://huggingface.co/datasets/usuario/repo/resolve/main/archivo.zip`
         """)
 
         with gr.Row():
             with gr.Column():
-                hf_repo = gr.Textbox(
-                    label="Repo de HuggingFace",
-                    placeholder="tu_usuario/dataset-seminario",
-                    info="El nombre del dataset en HuggingFace"
-                )
-                hf_filename = gr.Textbox(
-                    label="Nombre del archivo ZIP",
-                    placeholder="dataset.zip",
-                    info="El nombre exacto del archivo que subiste"
+                hf_url = gr.Textbox(
+                    label="Link directo del ZIP",
+                    placeholder="https://huggingface.co/datasets/PlayerBPlaytime/blended-models/resolve/main/dataset.zip",
+                    info="El link completo del archivo en HuggingFace"
                 )
                 hf_token = gr.Textbox(
                     label="Token de HuggingFace (solo si es privado)",
@@ -278,7 +269,7 @@ with gr.Blocks(
 
         download_btn.click(
             fn_descargar_hf,
-            inputs=[hf_repo, hf_filename, hf_token],
+            inputs=[hf_url, hf_token],
             outputs=[download_status]
         )
 
@@ -315,12 +306,12 @@ with gr.Blocks(
     with gr.Tab("🔥 Entrenar"):
         gr.Markdown("""
         ### Entrena el modelo con tu dataset
-        
-        Si ya descargaste desde HuggingFace, 
+
+        Si ya descargaste desde HuggingFace,
         pulsa directamente el botón sin subir ZIP.
-        
+
         Si no, sube tu ZIP aquí.
-        
+
         ```
         dataset.zip
         ├── lq/  ← audios con eco/ruido
