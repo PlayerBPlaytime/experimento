@@ -6,4 +6,4 @@ scipy
 pedalboard
 soundfile
 librosa
-pathlib
+huggingface_hub
