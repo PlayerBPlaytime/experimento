@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -19,11 +20,6 @@ class ResidualBlock(nn.Module):
 
 
 class SeminarGhostKiller(nn.Module):
-    """
-    U-Net para limpieza de audio de seminarios.
-    Aprende a mapear espectrogramas sucios a limpios.
-    """
-
     def __init__(self):
         super().__init__()
 
@@ -86,59 +82,48 @@ class SeminarGhostKiller(nn.Module):
     def forward(self, x):
         orig_size = x.shape[-2:]
 
-        # Encoder
         e1 = self.enc1(x)
         e2 = self.enc2(e1)
         e3 = self.enc3(e2)
         e4 = self.enc4(e3)
 
-        # Bottleneck
         b = self.bottleneck(e4)
 
-        # Decoder con skip connections
         d4 = self.dec4(torch.cat([b, e4], dim=1))
         if d4.shape[-2:] != e3.shape[-2:]:
             d4 = F.interpolate(
                 d4, size=e3.shape[-2:],
-                mode='bilinear',
-                align_corners=False
+                mode='bilinear', align_corners=False
             )
 
         d3 = self.dec3(torch.cat([d4, e3], dim=1))
         if d3.shape[-2:] != e2.shape[-2:]:
             d3 = F.interpolate(
                 d3, size=e2.shape[-2:],
-                mode='bilinear',
-                align_corners=False
+                mode='bilinear', align_corners=False
             )
 
         d2 = self.dec2(torch.cat([d3, e2], dim=1))
         if d2.shape[-2:] != e1.shape[-2:]:
             d2 = F.interpolate(
                 d2, size=e1.shape[-2:],
-                mode='bilinear',
-                align_corners=False
+                mode='bilinear', align_corners=False
             )
 
         out = self.output(torch.cat([d2, e1], dim=1))
         if out.shape[-2:] != orig_size:
             out = F.interpolate(
                 out, size=orig_size,
-                mode='bilinear',
-                align_corners=False
+                mode='bilinear', align_corners=False
             )
 
-        # Máscara multiplicativa
         return x * out + (1 - out) * x.mean()
 
 
 def get_model(device, checkpoint_path=None):
-    """
-    Carga el modelo con o sin checkpoint.
-    """
     model = SeminarGhostKiller().to(device)
 
-    if checkpoint_path is not None:
+    if checkpoint_path is not None and os.path.exists(checkpoint_path):
         state = torch.load(checkpoint_path, map_location=device)
         model.load_state_dict(state)
         print(f"✅ Checkpoint cargado: {checkpoint_path}")
