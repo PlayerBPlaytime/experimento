@@ -77,7 +77,7 @@ class SeminarDataset(Dataset):
         return wav
 
     def __len__(self):
-        return len(self.pairs) * 20
+        return len(self.pairs) * 5
 
     def __getitem__(self, idx):
         lq_path, hq_path = self.pairs[idx % len(self.pairs)]
