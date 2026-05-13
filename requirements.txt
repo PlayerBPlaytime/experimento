@@ -2,8 +2,8 @@ torch
 torchaudio
 gradio
 numpy
-scipy
-pedalboard
 soundfile
 librosa
 huggingface_hub
+einops
+requests
