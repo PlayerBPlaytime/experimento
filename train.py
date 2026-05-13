@@ -1,13 +1,9 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-import os
 
-
-SAMPLE_RATE = 48000
-N_FFT = 2048
-HOP_LENGTH = 512
 BATCH_SIZE = 4
 EPOCHS = 150
 LR = 3e-4
@@ -15,19 +11,19 @@ CHECKPOINT_DIR = "/kaggle/working/checkpoints"
 
 
 def fft_loss(pred, target):
-    """Loss en dominio frecuencial"""
     pred_fft = torch.fft.fft(pred, dim=-1).abs()
     target_fft = torch.fft.fft(target, dim=-1).abs()
     return F.l1_loss(pred_fft, target_fft)
 
 
 def spectral_convergence_loss(pred, target):
-    """Loss de convergencia espectral"""
-    return torch.norm(target - pred, p="fro") / (torch.norm(target, p="fro") + 1e-8)
+    return (
+        torch.norm(target - pred, p="fro")
+        / (torch.norm(target, p="fro") + 1e-8)
+    )
 
 
 def combined_loss(pred, target):
-    """Loss combinada para mejor calidad"""
     l1 = F.l1_loss(pred, target)
     fft = fft_loss(pred, target)
     sc = spectral_convergence_loss(pred, target)
@@ -35,11 +31,6 @@ def combined_loss(pred, target):
 
 
 def train(model, dataset, device, progress_callback=None):
-    """
-    Entrena el modelo con el dataset dado.
-    progress_callback: función que recibe (porcentaje, mensaje)
-    """
-
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
     dataloader = DataLoader(
@@ -50,7 +41,6 @@ def train(model, dataset, device, progress_callback=None):
         pin_memory=True
     )
 
-    # Usar múltiples GPUs si están disponibles
     if torch.cuda.device_count() > 1:
         print(f"🚀 Usando {torch.cuda.device_count()} GPUs")
         model = nn.DataParallel(model)
@@ -87,7 +77,6 @@ def train(model, dataset, device, progress_callback=None):
         avg_loss = epoch_loss / len(dataloader)
         losses.append(avg_loss)
 
-        # Guardar mejor modelo
         if avg_loss < best_loss:
             best_loss = avg_loss
             state = (
@@ -100,7 +89,6 @@ def train(model, dataset, device, progress_callback=None):
                 f"{CHECKPOINT_DIR}/best_model.pth"
             )
 
-        # Callback de progreso
         if progress_callback:
             pct = (epoch + 1) / EPOCHS
             msg = (
