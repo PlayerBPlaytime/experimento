@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-BATCH_SIZE = 8
+BATCH_SIZE = 4
 EPOCHS = 50
 LR = 3e-4
 CHECKPOINT_DIR = "/kaggle/working/checkpoints"
