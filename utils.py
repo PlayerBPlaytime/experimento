@@ -1,59 +1,62 @@
 import os
 import shutil
 import zipfile
+import requests
 from pathlib import Path
 
 
-def descargar_desde_hf(repo_id, filename, local_path, token=None):
+def descargar_desde_hf(url, local_path="/kaggle/working/hf_download", token=None):
     """
-    Descarga un archivo desde Hugging Face Dataset.
-    
-    repo_id: "tu_usuario/dataset-seminario"
-    filename: "dataset.zip"
-    local_path: donde guardarlo
-    token: tu HF token si el dataset es privado
+    Descarga un archivo desde Hugging Face usando el link directo completo.
     """
-    try:
-        from huggingface_hub import hf_hub_download
-    except ImportError:
-        os.system("pip install huggingface_hub -q")
-        from huggingface_hub import hf_hub_download
 
-    print(f"⬇️ Descargando {filename} desde HuggingFace...")
-    print(f"   Repo: {repo_id}")
-    print(f"   Esto puede tardar unos minutos dependiendo del tamaño...")
+    os.makedirs(local_path, exist_ok=True)
 
-    path = hf_hub_download(
-        repo_id=repo_id,
-        filename=filename,
-        repo_type="dataset",
-        local_dir=local_path,
-        token=token,
-    )
+    filename = url.split("/")[-1].split("?")[0]
+    dest = os.path.join(local_path, filename)
 
-    print(f"✅ Descargado en: {path}")
-    return path
+    print(f"⬇️ Descargando desde: {url}")
+    print(f"   Guardando en: {dest}")
+
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    with requests.get(url, headers=headers, stream=True) as r:
+        r.raise_for_status()
+
+        total = int(r.headers.get("content-length", 0))
+        total_mb = total / 1e6
+
+        print(f"   Tamaño total: {total_mb:.1f} MB")
+
+        descargado = 0
+        with open(dest, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+                descargado += len(chunk)
+                pct = (descargado / total * 100) if total else 0
+                print(
+                    f"\r   Progreso: {pct:.1f}% "
+                    f"({descargado/1e6:.1f}/{total_mb:.1f} MB)",
+                    end=""
+                )
+
+    print(f"\n✅ Descarga completa: {dest}")
+    return dest
 
 
 def extraer_zip(zip_path, destino="/kaggle/working/dataset"):
-    """
-    Extrae el ZIP y encuentra las carpetas lq/hq.
-    """
-
     if os.path.exists(destino):
         shutil.rmtree(destino)
     os.makedirs(destino)
 
     print(f"📦 Extrayendo ZIP...")
-    print(f"   Origen: {zip_path}")
-    print(f"   Destino: {destino}")
-
     with zipfile.ZipFile(zip_path, 'r') as z:
         z.extractall(destino)
 
-    print(f"✅ ZIP extraído")
+    print(f"✅ ZIP extraído en: {destino}")
 
-    # Buscar carpetas lq y hq
     lq_dir = None
     hq_dir = None
 
@@ -64,7 +67,6 @@ def extraer_zip(zip_path, destino="/kaggle/working/dataset"):
             elif d.lower() == 'hq':
                 hq_dir = os.path.join(root, d)
 
-    # Si no hay carpetas nombradas buscar por nombre de archivo
     if lq_dir is None or hq_dir is None:
         print("⚠️ No se encontraron carpetas lq/hq, buscando por nombre...")
         lq_dir = os.path.join(destino, "lq")
@@ -86,10 +88,6 @@ def extraer_zip(zip_path, destino="/kaggle/working/dataset"):
 
 
 def verificar_dataset(lq_dir, hq_dir):
-    """
-    Verifica que el dataset esté bien formado.
-    """
-
     lq_files = sorted(Path(lq_dir).glob("*.wav"))
     hq_files = sorted(Path(hq_dir).glob("*.wav"))
 
@@ -112,10 +110,6 @@ def verificar_dataset(lq_dir, hq_dir):
 
 
 def crear_lq_sintetico(hq_dir, lq_dir):
-    """
-    Crea versiones LQ sintéticas a partir de audios HQ.
-    """
-
     try:
         from pedalboard import (
             Pedalboard, Reverb,
@@ -153,6 +147,7 @@ def crear_lq_sintetico(hq_dir, lq_dir):
 
         lq_audio = board(audio, sr)
 
+        import numpy as np
         ruido = np.random.randn(*lq_audio.shape) * 0.008
         lq_audio = lq_audio + ruido
         lq_audio = lq_audio * 0.7
