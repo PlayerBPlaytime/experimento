@@ -39,7 +39,6 @@ class MusicDataset(Dataset):
     def load_audio(self, path):
         wav, sr = torchaudio.load(path)
 
-        # Resample
         if sr != self.sr:
             wav = T.Resample(sr, self.sr)(wav)
 
@@ -56,9 +55,9 @@ class MusicDataset(Dataset):
             n_fft          = N_FFT,
             hop_length     = HOP_LENGTH,
             window         = window,
-            return_complex = True
+            return_complex = True,
         )
-        return spec.abs().unsqueeze(0)  # [1, F, T]
+        return spec.abs().unsqueeze(0)
 
     def random_crop(self, lq, hq):
         min_len = min(lq.shape[-1], hq.shape[-1])
@@ -74,6 +73,23 @@ class MusicDataset(Dataset):
 
         return lq, hq
 
+    def augment(self, lq, hq):
+        """
+        Augmentaciones para 21 pares.
+        Más variedad → mejor generalización.
+        """
+        # Cambio de volumen aleatorio
+        gain = np.random.uniform(0.7, 1.0)
+        lq   = lq * gain
+        hq   = hq * gain
+
+        # Flip temporal (50%)
+        if np.random.random() < 0.5:
+            lq = torch.flip(lq, dims=[-1])
+            hq = torch.flip(hq, dims=[-1])
+
+        return lq, hq
+
     def normalize(self, wav):
         peak = wav.abs().max()
         if peak > 0:
@@ -81,6 +97,7 @@ class MusicDataset(Dataset):
         return wav
 
     def __len__(self):
+        # 21 × 20 = 420 muestras por epoch
         return len(self.pairs) * 20
 
     def __getitem__(self, idx):
@@ -90,14 +107,12 @@ class MusicDataset(Dataset):
         hq = self.load_audio(hq_path)
 
         lq, hq = self.random_crop(lq, hq)
+        lq, hq = self.augment(lq, hq)
 
         lq = self.normalize(lq)
         hq = self.normalize(hq)
 
-        lq_spec = self.to_spec(lq)
-        hq_spec = self.to_spec(hq)
-
-        return lq_spec, hq_spec
+        return self.to_spec(lq), self.to_spec(hq)
 
 
 SeminarDataset = MusicDataset
