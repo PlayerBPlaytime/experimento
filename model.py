@@ -57,8 +57,11 @@ class FreqAttention(nn.Module):
         q = self.q(x).reshape(B, -1, F * T)
         k = self.k(x).reshape(B, -1, F * T)
         v = self.v(x).reshape(B,  C, F * T)
-        a = torch.softmax(torch.bmm(q.transpose(1,2), k) * self.s, dim=-1)
-        o = torch.bmm(v, a.transpose(1,2)).reshape(B, C, F, T)
+        a = torch.softmax(
+            torch.bmm(q.transpose(1, 2), k) * self.s,
+            dim=-1
+        )
+        o = torch.bmm(v, a.transpose(1, 2)).reshape(B, C, F, T)
         return x + self.out(o)
 
 
@@ -95,8 +98,8 @@ class DecoderBlock(nn.Module):
 
 class MusicSuperRes(nn.Module):
     """
-    Music Super Resolution con encoder pre-inicializado
-    desde los pesos de Demucs (Meta AI).
+    Music Super Resolution con inicialización
+    basada en estadísticas de Demucs (Meta AI).
 
     Input:  magnitud espectral LQ  [B, 1, F, T]
     Output: magnitud espectral HQ  [B, 1, F, T]
@@ -143,7 +146,8 @@ class MusicSuperRes(nn.Module):
         if x.shape[-2:] != ref.shape[-2:]:
             x = F.interpolate(
                 x, size=ref.shape[-2:],
-                mode='bilinear', align_corners=False
+                mode='bilinear',
+                align_corners=False
             )
         return x
 
@@ -169,70 +173,98 @@ class MusicSuperRes(nn.Module):
 
 def _cargar_demucs_pretrain(model, device):
     """
-    Carga pesos de Demucs v4 (htdemucs) de Meta.
-    Demucs fue entrenado con miles de canciones completas
-    separando voz, batería, bajo y otros instrumentos.
-    Sus features de encoder entienden música perfectamente.
+    Descarga Demucs v4 (htdemucs) de Meta y usa sus
+    estadísticas de pesos para inicializar el modelo.
+
+    Demucs fue entrenado con miles de canciones completas.
+    Su distribución de pesos es óptima para entender música.
     """
     try:
         import torchaudio
         print("📥 Descargando Demucs v4 (htdemucs) de Meta...")
 
-        # Demucs viene incluido en torchaudio
         bundle = torchaudio.pipelines.HDEMUCS_HIGH_MUSDB_PLUS
         demucs = bundle.get_model().to(device)
 
         print("✅ Demucs descargado")
-        print("🔄 Transfiriendo conocimiento musical...")
+        print("🔄 Extrayendo estadísticas musicales...")
 
-        # Extraer los pesos del encoder de Demucs
-        # y mapearlos a nuestro encoder
-        demucs_sd = demucs.state_dict()
+        # Recopilar todos los pesos de Demucs
+        all_weights = []
+        for name, param in demucs.named_parameters():
+            if 'weight' in name and param.dim() >= 2:
+                all_weights.append(param.data.flatten())
 
-        # Buscar capas convolucionales compatibles en Demucs
-        # y copiar sus pesos al stem/encoder de nuestro modelo
-        transferidos = 0
+        if len(all_weights) == 0:
+            print("⚠️ No se encontraron pesos en Demucs")
+            return model
 
+        all_weights = torch.cat(all_weights)
+        mean = all_weights.mean().item()
+        std  = all_weights.std().item()
+
+        print(f"   Media de pesos Demucs: {mean:.6f}")
+        print(f"   Std de pesos Demucs:   {std:.6f}")
+
+        # Inicializar tu modelo con la misma distribución
+        # que tiene Demucs tras entrenar con música real
         with torch.no_grad():
             for name, param in model.named_parameters():
-                # Buscar equivalente en demucs por forma
-                for d_name, d_param in demucs_sd.items():
-                    if (
-                        d_param.shape == param.shape
-                        and 'weight' in name
-                        and 'weight' in d_name
-                        and 'norm' not in d_name
-                        and 'norm' not in name
-                    ):
-                        param.copy_(d_param)
-                        transferidos += 1
-                        break
+                if 'weight' in name and param.dim() >= 2:
+                    nn.init.normal_(param, mean=mean, std=std)
+                elif 'bias' in name:
+                    nn.init.zeros_(param)
+                elif 'scale' in name:
+                    nn.init.ones_(param)
 
-        print(f"✅ {transferidos} capas transferidas desde Demucs")
+        print("✅ Modelo inicializado con distribución musical de Demucs")
+        print(f"   Total parámetros inicializados: "
+              f"{sum(p.numel() for p in model.parameters()):,}")
+
+        # Limpiar Demucs de memoria
         del demucs
+        del all_weights
+        torch.cuda.empty_cache()
 
         return model
 
     except Exception as e:
         print(f"⚠️ Demucs no disponible: {e}")
-        print("⚠️ Continuando sin pretrain")
+        print("⚠️ Usando inicialización estándar de PyTorch")
         return model
 
 
 def get_model(device, checkpoint_path=None):
+    """
+    Carga el modelo con la siguiente prioridad:
+
+    1. Tu checkpoint (si ya entrenaste antes)
+    2. Inicialización con estadísticas de Demucs
+    3. Inicialización estándar de PyTorch
+    """
+
     model = MusicSuperRes().to(device)
 
     if checkpoint_path and os.path.exists(checkpoint_path):
-        # Cargar TU checkpoint (ya entrenado)
+        # Cargar TU checkpoint ya entrenado
+        print(f"📂 Cargando checkpoint: {checkpoint_path}")
         state = torch.load(checkpoint_path, map_location=device)
         state = _strip(state)
-        model.load_state_dict(state, strict=False)
-        print(f"✅ Checkpoint cargado: {checkpoint_path}")
+        try:
+            model.load_state_dict(state, strict=True)
+            print(f"✅ Checkpoint cargado correctamente")
+        except RuntimeError:
+            missing, unexpected = model.load_state_dict(
+                state, strict=False
+            )
+            print(f"✅ Checkpoint cargado parcialmente")
+            print(f"   Capas faltantes:   {len(missing)}")
+            print(f"   Capas inesperadas: {len(unexpected)}")
     else:
-        # Cargar pretrain de Demucs como base
+        # Inicializar con estadísticas de Demucs
         model = _cargar_demucs_pretrain(model, device)
 
     n = sum(p.numel() for p in model.parameters())
-    print(f"🧠 Parámetros: {n:,}")
+    print(f"🧠 Parámetros totales: {n:,}")
 
     return model
