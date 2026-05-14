@@ -253,52 +253,35 @@ def _strip(state_dict):
 
 def get_model(device, checkpoint_path=None):
     """
-    1. Intenta cargar AudioSR preentrenado
-    2. Si falla, usa MusicSuperRes propia
-    3. Si hay checkpoint tuyo, lo carga encima
+    Usa MusicSuperRes propia.
+    AudioSR se descarta por problemas de instalación.
     """
 
-    # ── Intento AudioSR ──
-    audiosr_model = None
-    pretrain_path = descargar_audiosr_pretrain()
+    print("🔄 Cargando MusicSuperRes...")
+    model = MusicSuperRes(n_fft=2048).to(device)
 
-    if pretrain_path and os.path.exists(pretrain_path):
+    # Intentar cargar pretrain si existe
+    pretrain = "/kaggle/working/audiosr_pretrain/audiosr_music.pth"
+    if os.path.exists(pretrain):
         try:
-            from audiosr import build_model, super_resolution
-            audiosr_model = build_model(model_name="music")
-            print("✅ AudioSR cargado como base")
+            state = torch.load(pretrain, map_location=device)
+            state = _strip(state)
+            missing, unexpected = model.load_state_dict(state, strict=False)
+            print(f"✅ Pesos parciales cargados")
+            print(f"   Nuevas:    {len(missing)}")
+            print(f"   Ignoradas: {len(unexpected)}")
         except Exception as e:
-            print(f"⚠️ AudioSR no disponible: {e}")
-            audiosr_model = None
-
-    # ── Si AudioSR falla, usa arquitectura propia ──
-    if audiosr_model is None:
-        print("🔄 Usando MusicSuperRes propia...")
-        model = MusicSuperRes(n_fft=2048).to(device)
-
-        # Cargar pretrain propio si existe
-        if pretrain_path and os.path.exists(pretrain_path):
-            try:
-                state = torch.load(pretrain_path, map_location=device)
-                state = _strip(state)
-                missing, unexpected = model.load_state_dict(
-                    state, strict=False
-                )
-                print(f"✅ Pesos parciales cargados")
-                print(f"   Capas nuevas:    {len(missing)}")
-                print(f"   Capas ignoradas: {len(unexpected)}")
-            except Exception as e:
-                print(f"⚠️ No se pudieron cargar pesos: {e}")
+            print(f"⚠️ No se pudieron cargar pesos: {e}")
     else:
-        model = audiosr_model
+        print("⚠️ Sin pretrain. Entrenando desde cero.")
 
-    # ── Cargar tu checkpoint si existe ──
+    # Cargar tu checkpoint si existe
     if checkpoint_path and os.path.exists(checkpoint_path):
         try:
             state = torch.load(checkpoint_path, map_location=device)
             state = _strip(state)
             model.load_state_dict(state, strict=False)
-            print(f"✅ Tu checkpoint cargado: {checkpoint_path}")
+            print(f"✅ Checkpoint cargado: {checkpoint_path}")
         except Exception as e:
             print(f"⚠️ Error cargando checkpoint: {e}")
 
